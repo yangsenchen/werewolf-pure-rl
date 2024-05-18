@@ -1,4 +1,5 @@
 from gymnasium.envs.registration import register
+from werewolf_env.myenv import MyEnv
 
 register(
     id='WolvesVillagers-v0',
