@@ -4,6 +4,7 @@ import werewolf_env  # Ensure the environment is imported to register it
 
 # Load the trained model
 model_path = 'ppo_wolves_villagers_final'
+model_path = 'models/ppo_wolves_villagers_60000_steps.zip'
 model = PPO.load(model_path)
 
 # Initialize the environment

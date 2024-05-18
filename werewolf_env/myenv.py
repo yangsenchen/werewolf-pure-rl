@@ -5,14 +5,14 @@ import numpy as np
 
 
 class MyEnv(gym.Env):
-    def __init__(self, num_wolves=2, num_villagers=4, debug= False):
+    def __init__(self, num_wolves=2, num_villagers=4, debug_mode=True):
         super(MyEnv, self).__init__()
-        self.debug = debug
+        self.debug_mode = debug_mode
         # Game Parameters
         self.num_wolves = num_wolves
         self.num_villagers = num_villagers
         self.num_players = self.num_wolves + self.num_villagers
-
+        
         # Roles
         self.roles_names = ['Villager', 'Wolf']  # 0, 1
         self.role_distribution = {'Villager': self.num_villagers, 'Wolf': self.num_wolves}
@@ -24,8 +24,10 @@ class MyEnv(gym.Env):
             'game_phase': spaces.Discrete(2),  # 0: Day, 1: Night
             'my_role': spaces.Discrete(len(self.roles_names) + 1),  # Own role (+1 for unknown)
             'alive': spaces.MultiBinary(self.num_players)
-        })
+        })  
 
+        # who to train in this game
+        self.who_to_train = np.random.randint(0, 2)
         # Action Space
         self.action_space = spaces.Discrete(self.num_players)  # Target player index
 
@@ -58,9 +60,12 @@ class MyEnv(gym.Env):
         self.episode_log = []
         self.vote_record = {i: -1 for i in range(self.num_players)}
         self.night_vote_record = {i: -1 for i in range(self.num_players)}
+        self.who_to_train = np.random.randint(0, 2)
+        
+        # TODO use exisiting model to perform as the opposite side, use model checkpoint that start with name wolf xxx to run self.who_to_train = 0 and vice versa
         return self._get_observation(), {}
 
-    def _random_assign_roles(self):
+    def _random_assign_roles(self): 
         """Assign roles to players randomly based on role distribution. return is like [0,1,0,1,0,1,1,1]"""
         roles = []
         for role, count in self.role_distribution.items():
@@ -88,7 +93,8 @@ class MyEnv(gym.Env):
         return observation
 
     def step(self, action):
-
+        
+        reward = 0
         terminated = False
         truncated = False
         info = {}
@@ -96,49 +102,67 @@ class MyEnv(gym.Env):
         # 当前的角色身份
         current_role = self.roles[self.current_player]
         current_role_name = self.roles_names[current_role]
-        # TODO  检查当前角色是否还活着
-        if self.alive[self.current_player] == False:
-            # print(f"Player {self.current_player} is dead...")
-            return self._get_observation(), 0, terminated, truncated, info
-        # 白天
+        
+        # if self.alive[self.current_player] == 0:
+        #     # print(f"Player {self.current_player} is dead...")
+        #     reward = 0
+            
+        # # 活的角色
+        # else:
+        #     # 白天
+        
         if self.day_or_night == 0:
             # 死人投票 和 死人被投 都不算
-            if self.alive[action] == True and self.alive[self.current_player]== True:
+            if self.alive[action] == 1 and self.alive[self.current_player]== 1:
                 self.votes[action] += 1
                 self.vote_record[self.current_player] = action
             
             log = f"    Player {self.current_player} ({current_role_name}): votes to exile Player {action}"
             self.episode_log.append(log)
-
+            
             # 投票完毕 进入计票环节
+            # if self.current_player.role != self.who_to_train:
+            #     # TODO use exisiting model to perform as the opposite side
+            #     self.existing_model.predict(state, what)
+                
             if self.current_player == self.num_players - 1:
                 exiled_player = np.argmax(self.votes)
-                self.alive[exiled_player] = False
+                self.alive[exiled_player] = 0
 
                 log = f"    Player {exiled_player} ({current_role_name}): exiled"
                 self.episode_log.append(log)
 
-                reward = 0
-                for k, v in self.vote_record.items():
-                    if self.roles[k] == self.roles[v]:
-                        if self.roles[k] == 1: # 狼人投狼人
-                            reward -= 2
-                        else:
-                            reward -= 1
-                    else:
-                        reward += 1
+                # for k, v in self.vote_record.items():
+                #     if self.roles[k] == self.roles[v]:
+                #         if self.roles[k] == 1:
+                #             reward -= 2
+                #         else:
+                #             reward -= 1
+                #     else:
+                #         reward += 1
+                # 如果说投票结束之后 己方阵营死人了 就是reward为负
+                if self.roles[exiled_player] == self.who_to_train:
+                    reward -= 1
+                else:
+                    reward += 1
                 
                 # 判断游戏是否结束
                 remaining_wolves = np.sum(self.alive & (self.roles == self.roles_names.index('Wolf')))
                 remaining_villagers = np.sum(self.alive & (self.roles == self.roles_names.index('Villager')))
-                self.episode_log.append(f"Remaining wolves: {remaining_wolves}")
-                self.episode_log.append(f"Remaining villagers: {remaining_villagers}")
+                self.episode_log.append(f"    Remaining wolves: {remaining_wolves}")
+                self.episode_log.append(f"    Remaining villagers: {remaining_villagers}")
 
                 if remaining_wolves == 0:
                     self.episode_log.append("Villagers win!")
+                    if self.who_to_train == 0:
+                        reward += 100
+                        # print("Villagers win!")
                     terminated = True
                 elif remaining_villagers == 0:
                     self.episode_log.append("Wolves win!")
+                    if self.who_to_train == 1:
+                        reward += 100
+                        # print("Wolves win!")
                     terminated = True
                 else:
                     terminated = False
@@ -162,23 +186,23 @@ class MyEnv(gym.Env):
             reward = 0
             # 当前角色是狼人
             if current_role == 1: 
-                
-                if self.alive[action] == True:
+                # 如果当前选择攻击的角色是活着的 并且当前狼人本身是活着的 票才是有效的
+                if self.alive[action] == 1 and self.alive[self.current_player]== 1:
                     self.night_vote_record[self.current_player] = action
                     self.night_votes[action] += 1
                     log = f"    P{self.current_player} ({current_role_name}): votes to attack P{action}"
                     self.episode_log.append(log)
                     reward = 1
                     
-                else:  # 狼人投的是已经死的人
-                    log = f"    P{self.current_player} ({current_role_name}): votes to attack P{action} who is dead..."
-                    self.episode_log.append(log)
-                    reward -=10
+                # else:  # 狼人投的是已经死的人
+                #     log = f"    P{self.current_player} ({current_role_name}): votes to attack P{action} who is dead..."
+                #     self.episode_log.append(log)
+                #     reward -=10
 
-            else: # 当前角色是村民
-                reward = 0
-                log = f"    P{self.current_player} ({current_role_name}): sleeps..."
-                self.episode_log.append(log)
+            # else: # 当前角色是村民
+            #     reward = 0
+            #     log = f"    P{self.current_player} ({current_role_name}): sleeps..."
+            #     self.episode_log.append(log)
 
             # 狼人内部投票完毕 进入计票环节
             if self.current_player == self.num_players - 1:
@@ -186,25 +210,32 @@ class MyEnv(gym.Env):
                 log = f"    P{killed_player} ({current_role_name}): is killed"
                 self.episode_log.append(log)
                 reward = 0
-                for k, v in self.night_vote_record.items():
-                    if self.roles[k] == self.roles[v]:
-                         # 狼人攻击狼人
-                        reward -= 4
-                    else:
-                        reward += 1
-                self.alive[killed_player] = False
+                # for k, v in self.night_vote_record.items():
+                #     if self.roles[k] == self.roles[v]:
+                #          # 狼人攻击狼人
+                #         reward -= 4
+                #     else:
+                #         reward += 1
+                self.alive[killed_player] = 0
                 self.night_votes = np.zeros(self.num_players, dtype=int)
 
                 # 判断游戏是否结束
                 remaining_wolves = np.sum(self.alive & (self.roles == self.roles_names.index('Wolf')))
                 remaining_villagers = np.sum(self.alive & (self.roles == self.roles_names.index('Villager')))
-                self.episode_log.append(f"Remaining wolves: {remaining_wolves}")
-                self.episode_log.append(f"Remaining villagers: {remaining_villagers}")
+                self.episode_log.append(f"    Remaining wolves: {remaining_wolves}")
+                self.episode_log.append(f"    Remaining villagers: {remaining_villagers}")
                 if remaining_wolves == 0:
                     self.episode_log.append("Villagers win!")
+                    if self.who_to_train == 0:
+                        reward += 100
+                        # print("Villagers win!")
                     terminated = True
                 elif remaining_villagers == 0:
                     self.episode_log.append("Wolves win!")
+                    if self.who_to_train == 1:
+                        
+                        # print("Wolves win!")
+                        reward += 100
                     terminated = True
                 else:
                     terminated = False
@@ -214,12 +245,12 @@ class MyEnv(gym.Env):
                 self.day_or_night = 0 # 进入白天
                 self.current_player = 0 # 白天从第一个玩家开始发言
                 self.day += 1 # 天数加1
-            
+
             else: # 如果投票没结束
                 terminated = False
                 self.current_player += 1
 
-        if terminated and self.debug:
+        if terminated and self.debug_mode:
             for log in self.episode_log:
                 print(log)
             print("Game Over")
