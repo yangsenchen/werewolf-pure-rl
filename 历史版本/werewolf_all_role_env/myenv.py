@@ -62,7 +62,7 @@ class MyEnv(gym.Env):
         return self._get_observation(self.who_to_train), {}
 
     def _random_assign_roles(self): 
-        """Assign roles to players randomly based on role distribution. return is like [0,1,0,1,0,1,1,1]"""
+        """随机分配角色 return is like [0,1,0,1,0,1,1,1]"""
         roles = []
         for role, count in self.role_distribution.items():
             roles.extend([self.roles_names.index(role)] * count)
@@ -114,7 +114,7 @@ class MyEnv(gym.Env):
             if self.alive[action] == 1 and self.alive[self.current_player]== 1:
                 self.votes[action] += 1
             
-            self.log.append(f"    Player {self.current_player} ({current_role_name}): votes to exile Player {action}")
+                self.log.append(f"    Player {self.current_player} ({current_role_name}): votes to exile Player {action}")
             
             # 白天的投票完毕 进入计票环节
             if self.current_player == self.num_players - 1:
@@ -150,13 +150,11 @@ class MyEnv(gym.Env):
                 # 如果当前选择攻击的角色是活着的 并且当前狼人本身是活着的 票才是有效的
                 if self.alive[action] == 1 and self.alive[self.current_player]== 1:
                     self.night_votes[action] += 1
-                    log = f"    P{self.current_player} ({current_role_name}): votes to attack P{action}"
-                    self.log.append(log)
+                    self.log.append(f"    P{self.current_player} ({current_role_name}): votes to attack P{action}")
                     reward = 1
 
                 else:  # 狼人想杀死的是已经死的人
-                    log = f"    P{self.current_player} ({current_role_name}): votes to attack P{action} who is dead..."
-                    self.log.append(log)
+                    self.log.append(f"    P{self.current_player} ({current_role_name}): votes to attack P{action} who is dead...")
                     reward -=10
 
             else: # 当前训练角色是村民
