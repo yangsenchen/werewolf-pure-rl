@@ -5,7 +5,7 @@ import numpy as np
 
 
 class MyEnv(gym.Env):
-    def __init__(self, num_wolves=3, num_villagers=6, rival= None, camp=0, debug_mode=False):
+    def __init__(self, num_villagers=3, num_wolves=3, num_witch=1, num_hunter=1, num_seer =1, rival= None, camp=0, debug_mode=False):
         super(MyEnv, self).__init__()
         self.debug_mode = debug_mode
         # Game Parameters
@@ -106,14 +106,15 @@ class MyEnv(gym.Env):
             # 获得的是对面的动作
             action, _states = self.rival.predict(self._get_observation(current_role), deterministic=True)
             
+            
         # 白天
         if self.day_or_night == 0:
             
             # 计票环节 (死人投票 和 死人被投 都不算)
             if self.alive[action] == 1 and self.alive[self.current_player]== 1:
                 self.votes[action] += 1
-                # 打log 放在if里面 只有有效的投票才打log 不然log不干净
-                self.log.append(f"    Player {self.current_player} ({current_role_name}): votes to exile Player {action}")
+            
+            self.log.append(f"    Player {self.current_player} ({current_role_name}): votes to exile Player {action}")
             
             # 白天的投票完毕 进入计票环节
             if self.current_player == self.num_players - 1:
@@ -184,10 +185,10 @@ class MyEnv(gym.Env):
                 terminated = False
                 self.current_player += 1
 
-        if self.debug_mode:
+        if terminated and self.debug_mode:
             for log in self.log:
                 print(log)
-            # print("Game Over")
+            print("Game Over")
             print("\n")
             print("\n")
             print("\n")

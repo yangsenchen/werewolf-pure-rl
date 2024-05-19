@@ -1,50 +1,71 @@
 import gymnasium as gym
 from stable_baselines3 import PPO
-import werewolf_env  # Ensure the environment is imported to register it
+from gymnasium import spaces
+from stable_baselines3.common.monitor import Monitor
+from werewolf_env import MyEnv
+import numpy as np
 
-# Load the trained model
-model_path = 'ppo_wolves_villagers_final'
-model_path = 'models/ppo_wolves_villagers_60000_steps.zip'
-model = PPO.load(model_path)
+# Load the trained models
+werewolf_model_path = 'models/9_werewolf_99000'
+villager_model_path = 'models/9_villager_100000'
+werewolf_model = PPO.load(werewolf_model_path)
+villager_model = PPO.load(villager_model_path)
 
-# Initialize the environment
-env_id = 'WolvesVillagers-v0'
-env = gym.make(env_id)
+# Number of test games
+num_test_games = 100
 
-# Function to simulate a single game
-def simulate_game(env, model):
-    obs, _ = env.reset()
-    done = False
-    truncated = False
-    rewards = []
-    step_count = 0
+# Function to test the models
+def test_models(werewolf_model, villager_model, num_games=10):
+    werewolf_wins = 0
+    villager_wins = 0
 
-    while not done and not truncated:
-        action, _states = model.predict(obs, deterministic=True)
-        obs, reward, done, truncated, info = env.step(action)
-        rewards.append(reward)
-        step_count += 1
+    # for i in range(num_games):
+    #     print(f"Starting game {i+1}")
+    #     # 测试村民 对手为狼人
+    #     env = MyEnv(num_wolves=3, num_villagers=6, rival=werewolf_model, camp=0, debug_mode=True)
+    #     env = Monitor(env)
+    #     obs, _ = env.reset()
+    #     done = False
+    #     while not done:
+    #         action, _ = villager_model.predict(obs, deterministic=True)
+    #         obs, rewards, terminated, truncated, info = env.step(action)
+    #         done = terminated or truncated
+        
+    #     remaining_wolves = np.sum(env.alive & (env.roles == env.roles_names.index('Wolf')))
+    #     remaining_villagers = np.sum(env.alive & (env.roles == env.roles_names.index('Villager')))
+    #     if remaining_wolves > 0:
+    #         werewolf_wins += 1
+    #         print("Werewolves win!")
+    #     else:
+    #         villager_wins += 1
+    #         print("Villagers win!")
 
-    return rewards, step_count
+    # print(f"Werewolf win rate: {werewolf_wins / num_games:.2f}")
+    # print(f"Villager win rate: {villager_wins / num_games:.2f}")
 
-# Simulate 5 games and check the behavior
-num_games = 5
-results = []
+    for i in range(num_games):
+        print(f"Starting game {i+1}")
+        # 测试狼人 对手为村民
+        env = MyEnv(num_wolves=3, num_villagers=6, rival=villager_model, camp=1, debug_mode=True)
+        env = Monitor(env)
+        obs, _ = env.reset()
+        done = False
+        while not done:
+            action, _ = werewolf_model.predict(obs, deterministic=True)
+            obs, rewards, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
+        
+        remaining_wolves = np.sum(env.alive & (env.roles == env.roles_names.index('Wolf')))
+        remaining_villagers = np.sum(env.alive & (env.roles == env.roles_names.index('Villager')))
+        if remaining_wolves > 0:
+            werewolf_wins += 1
+            print("Werewolves win!")
+        else:
+            villager_wins += 1
+            print("Villagers win!")
 
-print(f"Simulating {num_games} games...")
+    print(f"Werewolf win rate: {werewolf_wins / num_games:.2f}")
+    print(f"Villager win rate: {villager_wins / num_games:.2f}")
 
-for i in range(num_games):
-    rewards, steps = simulate_game(env, model)
-    results.append((rewards, steps))
-    print(f"Game {i + 1}: Rewards = {rewards}, Steps = {steps}")
-
-env.close()
-
-# Print summary of results
-print("\nSummary of results:")
-for i, (rewards, steps) in enumerate(results):
-    print(f"Game {i + 1}:")
-    print(f"  Rewards = {rewards}")
-    print(f"  Steps = {steps}")
-
-print("Simulation completed.")
+# Test the models
+test_models(werewolf_model, villager_model, num_test_games)

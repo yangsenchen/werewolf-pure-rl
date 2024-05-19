@@ -18,7 +18,7 @@ else:
 
 # Function to evaluate the model and calculate win rate
 def evaluate_model(model, env_id, rival_model, camp, num_episodes=100):
-    env = MyEnv(num_wolves=2, num_villagers=4, rival=rival_model, camp=0 if camp == 'werewolf' else 1, debug_mode=True)
+    env = MyEnv(num_wolves=3, num_villagers=6, rival=rival_model, camp=0 if camp == 'werewolf' else 1, debug_mode=True)
     env = Monitor(env)
     wins = 0
     for _ in range(num_episodes):
@@ -64,8 +64,9 @@ env = Monitor(env)
 log_dir = "./logs/"
 new_logger = configure(log_dir, ["stdout", "csv", "tensorboard"])
 
+total_players = 9
 # Create and save initial model
-initial_model_path = 'models/ppo_villager_0'
+initial_model_path = f'models/{total_players}_villager_0'
 initial_model = PPO("MultiInputPolicy", env, verbose=1)
 initial_model.save(initial_model_path)
 
@@ -89,12 +90,12 @@ for i in tqdm(range(0, total_timesteps, batch_size)):
     current_camp = (current_camp + 1) % 2
     
     # Initialize environment with rival model
-    env = MyEnv(num_wolves=2, num_villagers=4, rival=rival_model, camp=0 if camp == 'werewolf' else 1, debug_mode=False)
+    env = MyEnv(num_wolves=3, num_villagers=6, rival=rival_model, camp=0 if camp == 'werewolf' else 1, debug_mode=False)
     env = Monitor(env)
     
     # Load the model from the previous iteration
     if i > 0:
-        model_path = f'models/ppo_{camps[(current_camp + 1) % 2]}_{i-1000}'
+        model_path = f'models/{total_players}_{camps[(current_camp + 1) % 2]}_{i-1000}'
         model = PPO.load(model_path)
     
     # Train the model
@@ -103,7 +104,7 @@ for i in tqdm(range(0, total_timesteps, batch_size)):
     model.learn(total_timesteps=batch_size, callback=[progress_bar_callback])
     
     # Save the model and update rival model
-    model_path = f'models/ppo_{camp}_{i + batch_size}'
+    model_path = f'models/{total_players}_{camp}_{i + batch_size}'
     model.save(model_path)
     rival_model = PPO.load(model_path)
 
@@ -117,27 +118,27 @@ for i in tqdm(range(0, total_timesteps, batch_size)):
     #     done = terminated or truncated
 
     # Evaluate the model and calculate the win rate
-    win_rate = evaluate_model(model, env_id, rival_model, camp)
-    print(f"Win rate after {i + batch_size} timesteps: {win_rate:.2f}")
+    # win_rate = evaluate_model(model, env_id, rival_model, camp)
+    # print(f"Win rate after {i + batch_size} timesteps: {win_rate:.2f}")
 
 print(f"Training completed.")
 
 # Save the final model
-final_model_path = 'models/ppo_wolves_villagers_final'
+final_model_path = f'models/{total_players}_wolves_villagers_final'
 model.save(final_model_path)
 print(f"Model saved at {final_model_path}.")
 
 # Test the trained model
-env = gym.make(env_id)
-env = Monitor(env)
-obs, _ = env.reset()
-print(f"Testing the trained model...")
+# env = gym.make(env_id)
+# env = Monitor(env)
+# obs, _ = env.reset()
+# print(f"Testing the trained model...")
 
-for _ in range(100):
-    action, _states = model.predict(obs, deterministic=True)
-    obs, rewards, terminated, truncated, info = env.step(action)
-    if terminated or truncated:
-        obs, _ = env.reset()
+# for _ in range(100):
+#     action, _states = model.predict(obs, deterministic=True)
+#     obs, rewards, terminated, truncated, info = env.step(action)
+#     if terminated or truncated:
+#         obs, _ = env.reset()
 
-env.close()
-print("Testing completed.")
+# env.close()
+# print("Testing completed.")
