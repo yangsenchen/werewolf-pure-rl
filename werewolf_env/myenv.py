@@ -24,7 +24,7 @@ class MyEnv(gym.Env):
         # Observation Space
         self.observation_space = spaces.Dict({
             'players': spaces.MultiDiscrete([len(self.roles_names) + 1] * self.num_players),  # +1 for "unknown"
-            'votes': spaces.MultiDiscrete([self.num_players] * self.num_players * 9),
+            'votes': spaces.MultiDiscrete([self.num_players] * self.num_players),
             'game_phase': spaces.Discrete(2),  # 0: Day, 1: Night
             'my_role': spaces.Discrete(len(self.roles_names) + 1),  # Own role (+1 for unknown)
             'alive': spaces.MultiBinary(self.num_players)
@@ -33,7 +33,7 @@ class MyEnv(gym.Env):
         # who to train in this game
         self.who_is_training = camp
         # Action Space
-        self.action_space = spaces.Discrete(self.num_players)  # 动作空间 可以选择的玩家编号 
+        self.action_space = spaces.Discrete(self.num_players)  # Target player index
 
         # Game State
         self.roles = np.zeros(self.num_players, dtype=int)  # 0代表村民 1代表狼人
@@ -43,7 +43,7 @@ class MyEnv(gym.Env):
         self.current_player = 0 # 当前玩家的身份 
         self.alive = np.ones(self.num_players, dtype=bool)  # 是否活着
         
-        
+        # Logging
         self.log = ["第1天 夜晚:"]
         self.day = 1
         
@@ -241,6 +241,3 @@ class MyEnv(gym.Env):
             terminated = False
 
         return reward, terminated
-    
-    
-# 我希望vote信息不仅包含前一天的投票 而要包含所有天的投票 我希望最长是九天结束游戏 否则判为狼人输掉

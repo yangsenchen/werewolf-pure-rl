@@ -67,7 +67,8 @@ new_logger = configure(log_dir, ["stdout", "csv", "tensorboard"])
 total_players = 9
 # Create and save initial model
 initial_model_path = f'models/{total_players}_werewolf_0'
-initial_model = PPO("MultiInputPolicy", env, verbose=1)
+initial_model = PPO("MultiInputPolicy", env, verbose=1, tensorboard_log=log_dir)
+initial_model.set_logger(new_logger)
 initial_model.save(initial_model_path)
 
 # Total timesteps and batch size
@@ -79,6 +80,7 @@ progress_bar_callback = TQDMProgressBarCallback(2047)
 camps_name = ['villager', 'werewolf']
 rival_model = PPO.load(initial_model_path)  # 使用随机初始化的模型作为对手
 model = PPO.load(initial_model_path) # 使用随机初始化的模型作为训练模型
+model.set_logger(new_logger)
 current_camp = 0  # 从村民开始
 
 # 开始训练 每个阵营训练round_size轮 然后换下一个阵营 不停循环 左脚踩右脚
@@ -88,7 +90,7 @@ for i in tqdm(range(0, total_timesteps, round_size)):
     print(f"{i} Training {camp_name} camp for {round_size} timesteps...")
     
     # Initialize environment with rival model
-    camp = 0 if camp == 'villager' else 1
+    camp = 0 if camp_name == 'villager' else 1
     env = MyEnv(num_wolves=3, num_villagers=6, rival=rival_model, camp=camp, debug_mode=False)
     env = Monitor(env)
     
@@ -97,10 +99,10 @@ for i in tqdm(range(0, total_timesteps, round_size)):
         # 使用上一轮训练的模型作为这一轮训练的初始化
         model_path = f'models/{total_players}_{camps_name[current_camp]}_{i-1000}'
         model = PPO.load(model_path)
+        model.set_logger(new_logger)
     
     # 训练
     model.set_env(env)
-    model.set_logger(new_logger)
     model.learn(total_timesteps=round_size, callback=[progress_bar_callback])
     
     # 存储模型
@@ -111,37 +113,4 @@ for i in tqdm(range(0, total_timesteps, round_size)):
     rival_model = PPO.load(model_path)
     current_camp = (current_camp + 1) % 2
 
-    # Print info during training
-    # obs, _ = env.reset()
-    # done = False
-    # while not done:
-    #     action, _ = model.predict(obs, deterministic=True)
-    #     obs, rewards, terminated, truncated, info = env.step(action)
-    #     print(f"Info: {info}")
-    #     done = terminated or truncated
-
-    # Evaluate the model and calculate the win rate
-    # win_rate = evaluate_model(model, env_id, rival_model, camp)
-    # print(f"Win rate after {i + batch_size} timesteps: {win_rate:.2f}")
-
 print(f"Training completed.")
-
-# Save the final model
-final_model_path = f'models/{total_players}_wolves_villagers_final'
-model.save(final_model_path)
-print(f"Model saved at {final_model_path}.")
-
-# Test the trained model
-# env = gym.make(env_id)
-# env = Monitor(env)
-# obs, _ = env.reset()
-# print(f"Testing the trained model...")
-
-# for _ in range(100):
-#     action, _states = model.predict(obs, deterministic=True)
-#     obs, rewards, terminated, truncated, info = env.step(action)
-#     if terminated or truncated:
-#         obs, _ = env.reset()
-
-# env.close()
-# print("Testing completed.")
