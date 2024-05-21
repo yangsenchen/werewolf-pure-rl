@@ -1,26 +1,33 @@
-
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 
 
 class MyEnv(gym.Env):
-    def __init__(self, num_wolves=3, num_villagers=6, rival= None, camp=0, debug_mode=False):
+    def __init__(self, num_wolves=3, num_villagers=6, num_seer=0, num_hunter=0, num_witch=0, rival=None, camp=0, debug_mode=False):
         super(MyEnv, self).__init__()
         self.debug_mode = debug_mode
         
         # 对手
         self.rival = rival
 
-        # Game Parameters
+        # 角色人数
         self.num_wolves = num_wolves
         self.num_villagers = num_villagers
-        self.num_players = self.num_wolves + self.num_villagers
-        
-        # Roles
-        self.roles_names = ['村民', '狼人']  # 0, 1
-        self.role_distribution = {'村民': self.num_villagers, '狼人': self.num_wolves}
+        self.num_seer = num_seer
+        self.num_hunter = num_hunter
+        self.num_witch = num_witch
+        self.num_players = self.num_wolves + self.num_villagers + self.num_seer + self.num_hunter + self.num_witch
 
+        # 角色分配  0: Villager, 1: Wolf, 2: Seer, 3: Witch, 4: Hunter
+        self.roles_names = ['村民', '狼人', '卜师', '女巫', '猎人'] 
+        self.role_distribution = {'村民': self.num_villagers, '狼人': self.num_wolves, '卜师': self.num_seer, '女巫': self.num_witch, '猎人': self.num_hunter}
+        self.seer_known_roles = np.zeros(self.num_players, dtype=int)
+        self.witch_known_roles = np.zeros(self.num_players, dtype=int)
+        
+        # 当前模型 train的是哪个阵营  0: 村民 以及 神职, 1: 狼人
+        self.who_is_training = camp
+        
         # Observation Space
         self.observation_space = spaces.Dict({
             'players': spaces.MultiDiscrete([len(self.roles_names) + 1] * self.num_players),  # +1 for "unknown"
@@ -30,10 +37,8 @@ class MyEnv(gym.Env):
             'alive': spaces.MultiBinary(self.num_players)
         })  
 
-        # who to train in this game
-        self.who_is_training = camp
         # Action Space
-        self.action_space = spaces.Discrete(self.num_players)  # Target player index
+        self.action_space = spaces.Box(low=0, high=1, shape=(10,), dtype=np.float32)  # Action space now includes role guesses and a target player index
 
         # Game State
         self.roles = np.zeros(self.num_players, dtype=int)  # 0代表村民 1代表狼人
@@ -94,7 +99,10 @@ class MyEnv(gym.Env):
         return observation
 
     def step(self, action):
-        
+        # Extract guessed roles and target player index from the action
+        guessed_roles = action[:-1]
+        target_player = int(action[-1] * self.num_players)-1  # Scale to player index
+
         reward = 0
         terminated = False
         truncated = False
@@ -107,24 +115,23 @@ class MyEnv(gym.Env):
         # 当前的角色是否活着
         current_role_alive = self.alive[self.current_player]
         
-        if current_role!= self.who_is_training:
+        if current_role != self.who_is_training:
             # 获得的是其他玩家的动作捏
             action, _states = self.rival.predict(self._get_observation(current_role), deterministic=True)
+            guessed_roles = action[:-1]
+            target_player = int(action[-1] * self.num_players)-1  # Scale to player index
             
         # 白天
         if self.day_or_night == 0:
-            
             if current_role_alive:
                 # 计票环节 投给死人不算数
-                if self.alive[action] == 1:
-                    self.votes[action] += 1
+                if self.alive[target_player] == 1:
+                    self.votes[target_player] += 1
                     reward += 10
-                    self.log.append(f"    P{self.current_player} ({current_role_name}): 投给 P{action} ({self.roles_names[self.roles[action]]})")
-
+                    self.log.append(f"    P{self.current_player} ({current_role_name}): 投给 P{target_player} ({self.roles_names[self.roles[target_player]]})")
                 else: #  惩罚投给死人的行为
                     reward += -50
-                    self.log.append(f"    P{self.current_player} ({current_role_name}): 投给 P{action} 但是这个人其实已经死了...")
-
+                    self.log.append(f"    P{self.current_player} ({current_role_name}): 投给 P{target_player} 但是这个人其实已经死了...")
             
             # 白天的投票完毕 进入计票环节
             if self.current_player == self.num_players - 1:
@@ -156,30 +163,25 @@ class MyEnv(gym.Env):
                 self.current_player += 1
         
         else: # 夜晚
-            
             # 当前的角色是狼人
             if current_role == 1: 
                 if current_role_alive:
                     # 如果当前选择攻击的角色是活着的 票才是有效的
-                    if self.alive[action] == 1:
-                        self.night_votes[action] += 1
-                        self.log.append(f"    P{self.current_player} ({current_role_name}): 想杀 P{action}")
+                    if self.alive[target_player] == 1:
+                        self.night_votes[target_player] += 1
+                        self.log.append(f"    P{self.current_player} ({current_role_name}): 想杀 P{target_player}")
                         if self.who_is_training == 1: # 训练狼人的时候才有reward 村民的话 晚上是没有reward的
                             reward += 1
-
                     else:  # 狼人想杀死的是已经死的人
-                        
-                        self.log.append(f"    P{self.current_player} ({current_role_name}): 想杀的P{action}已经死了...")
+                        self.log.append(f"    P{self.current_player} ({current_role_name}): 想杀的P{target_player}已经死了...")
                         if self.who_is_training == 1: 
                             reward += -50
-
             else: # 当前角色是村民 啥也不干 睡觉
                 if current_role_alive:
                     self.log.append(f"    P{self.current_player} ({current_role_name}): 睡觉")
 
             # 狼人内部投票完毕 进入计票环节
             if self.current_player == self.num_players - 1:
-                
                 # 死人
                 killed_player = np.argmax(self.night_votes)
                 self.alive[killed_player] = 0
@@ -197,7 +199,6 @@ class MyEnv(gym.Env):
                 self.current_player = 0 # 白天从第一个玩家开始发言
                 self.day += 1 # 天数加1
                 self.log.append(f"第{self.day}天 白天: 活人{str([i for i in range(len(self.alive)) if self.alive[i] == 1])}") # 打印剩余的玩家
-
             else: # 如果投票没结束
                 terminated = False
                 self.current_player += 1
@@ -214,7 +215,6 @@ class MyEnv(gym.Env):
 
 
     def _is_game_over(self):
-        
         # 判断游戏是否结束
         remaining_wolves = np.sum(self.alive & (self.roles == self.roles_names.index('狼人')))
         remaining_villagers = np.sum(self.alive & (self.roles == self.roles_names.index('村民')))
